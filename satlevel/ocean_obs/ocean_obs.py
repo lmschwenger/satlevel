@@ -74,13 +74,12 @@ class OceanObs:
         else:
             response.raise_for_status()
 
-    def save_data_to_file(self, data: List[Dict[str, Any]], file_path: str, layer_name: str,
-                          spatial_ref: osr.SpatialReference, fields: List[Tuple[str, int, int]]) -> None:
+    def save_data_to_file(self, data: List[Dict[str, Any]], file_path: str, layer_name: str, spatial_ref: osr.SpatialReference, fields: List[Tuple[str, int, int]]) -> None:
         """Save data to a point layer file using GDAL."""
         ogr.RegisterAll()
-        driver = ogr.GetDriverByName("ESRI Shapefile")
+        driver = ogr.GetDriverByName("GPKG")
         if driver is None:
-            raise ValueError("ESRI Shapefile driver is not available.")
+            raise ValueError("GPKG driver is not available.")
         data_source = driver.CreateDataSource(file_path)
         if data_source is None:
             raise ValueError(f"Could not create file: {file_path}")
@@ -98,20 +97,21 @@ class OceanObs:
             point.AddPoint(lon, lat)
             feature = ogr.Feature(layer.GetLayerDefn())
             feature.SetGeometry(point)
-            for field_name in fields:
-                feature.SetField(field_name[0], item["properties"].get(field_name[0], "Unknown"))
+            for field_name, _, _ in fields:
+                feature_value = item["properties"].get(field_name)
+                if feature_value is not None:
+                    feature.SetField(str(field_name), feature_value)
             layer.CreateFeature(feature)
             feature.Destroy()
         data_source.Destroy()
 
-    def save_observations_to_station_files(self, bbox: List[float], datetime_range: str, output_directory: str) -> None:
-        """Retrieve and save observations for all active stations to station-specific shapefiles."""
+    def retrieve_stations_data(self, bbox: List[float], datetime_range: str, output_directory: str) -> None:
+        """Retrieve and save observations for all active stations to station-specific GeoPackage files."""
         if not os.path.exists(output_directory):
             os.makedirs(output_directory)
         active_stations = self.get_active_stations_for_bbox(bbox)
         spatial_ref = osr.SpatialReference()
         spatial_ref.ImportFromEPSG(4326)
-        print(f"{active_stations = }")
         for station in active_stations:
             station_id = station["properties"]["stationId"]
             name = station["properties"].get("name", "Unknown")
@@ -120,10 +120,13 @@ class OceanObs:
             if not observations:
                 print(f"No observations found for station {station_id} in the specified time window.")
                 continue
-            file_path = os.path.join(output_directory, f"{station_id}.shp")
+            file_path = os.path.join(output_directory, f"{station_id}.gpkg")
             fields = [
-                ("datetime", ogr.OFTString, 25),
-                ("parameter", ogr.OFTString, 50),
+                ("created", ogr.OFTString, 50),
+                ("observed", ogr.OFTString, 50),
+                ("parameterId", ogr.OFTString, 50),
+                ("qcStatus", ogr.OFTString, 20),
+                ("stationId", ogr.OFTString, 20),
                 ("value", ogr.OFTReal, None)
             ]
             self.save_data_to_file(observations, file_path, station_id, spatial_ref, fields)
