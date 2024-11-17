@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 
 class Geom:
+    tif_exts = (".tif", ".tiff", ".TIF", ".TIFF")
     @staticmethod
     def get_bounding_box_from_raster(raster_path: str) -> tuple[float, float, float, float]:
         """Retrieve the bounding box from a raster file."""
@@ -119,3 +120,33 @@ class Geom:
             return datetime_range
         except (IndexError, ValueError) as e:
             raise ValueError(f"Invalid filename format: {filename}") from e
+
+    @classmethod
+    def merge_tifs(cls, input_dir, output_path):
+        # Collect all file paths in the directory ending with .tif
+        tif_files = [os.path.join(input_dir, file) for file in os.listdir(input_dir) if file.endswith(cls.tif_exts)]
+
+        # Open each file and get the first band from each
+        bands = [gdal.Open(tif) for tif in tif_files]
+
+        # Get metadata from the first file for projection and geotransform
+        cols = bands[0].RasterXSize
+        rows = bands[0].RasterYSize
+        geotransform = bands[0].GetGeoTransform()
+        projection = bands[0].GetProjection()
+
+        # Create a new multi-band GeoTIFF file
+        driver = gdal.GetDriverByName('GTiff')
+        out_raster = driver.Create(output_path, cols, rows, len(bands), gdal.GDT_Float32)
+
+        # Set the geotransform and projection
+        out_raster.SetGeoTransform(geotransform)
+        out_raster.SetProjection(projection)
+
+        # Write each band to the output file
+        for index, band in enumerate(bands):
+            out_band = out_raster.GetRasterBand(index + 1)
+            out_band.WriteArray(band.ReadAsArray())
+            out_band.FlushCache()
+
+        print(f"Merged TIF saved at {output_path}")
