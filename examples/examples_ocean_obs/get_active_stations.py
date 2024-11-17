@@ -9,5 +9,3 @@ filename, ext = os.path.splitext(os.path.basename(file_in))
 file_out = os.path.join(os.path.dirname(__file__), '..', 'data', 'output', f"{filename}_active_stations{ext}")
 
 bbox = Geom(file_path=file_in).get_bounding_box()
-
-OceanObs().save_stations_to_file(bbox=bbox, file_path=file_out)
